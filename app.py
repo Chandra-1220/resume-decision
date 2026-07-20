@@ -23,7 +23,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+try:
+    # Newer LangChain versions ship the splitter in its own package
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:
+    # Fallback for older LangChain versions
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 
