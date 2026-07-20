@@ -1,0 +1,11 @@
+streamlit>=1.36.0
+langchain>=0.2.11
+langchain-openai>=0.1.19
+langchain-community>=0.2.10
+openai>=1.40.0
+faiss-cpu>=1.8.0
+pypdf>=4.2.0
+docx2txt>=0.8
+plotly>=5.22.0
+pandas>=2.2.2
+tiktoken>=0.7.0
