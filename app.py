@@ -319,6 +319,7 @@ if results:
 
     # ---- Export ----
     st.subheader("📤 Export Reports")
+
     csv_buf = io.StringIO()
     df.to_csv(csv_buf, index=False)
     st.download_button(
@@ -328,5 +329,79 @@ if results:
         mime="text/csv",
         use_container_width=True,
     )
+
+    st.markdown("##### 👀 Report Preview")
+    st.caption("This is a visual preview of exactly what's inside the CSV above — one card per candidate, ranked.")
+
+    reco_style = {
+        "Yes":   {"bg": "#dcfce7", "border": "#22c55e", "text": "#15803d", "emoji": "🟢"},
+        "Maybe": {"bg": "#fef9c3", "border": "#eab308", "text": "#a16207", "emoji": "🟡"},
+        "No":    {"bg": "#fee2e2", "border": "#ef4444", "text": "#b91c1c", "emoji": "🔴"},
+    }
+
+    def _pills(items, color):
+        if not items:
+            return "<span style='color:#9ca3af; font-size:13px;'>None listed</span>"
+        return "".join(
+            f"<span style='display:inline-block; background:{color}; border-radius:999px; "
+            f"padding:3px 10px; margin:2px; font-size:12px; color:#111827;'>{i}</span>"
+            for i in items
+        )
+
+    for rank, row in df.iterrows():
+        reco = row.get("recommendation", "Maybe")
+        style = reco_style.get(reco, reco_style["Maybe"])
+        score = row.get("match_score", 0)
+
+        card_html = f"""
+        <div style="border:1px solid {style['border']}; border-left:6px solid {style['border']};
+                    border-radius:12px; padding:16px 20px; margin-bottom:14px; background:#ffffff;
+                    box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+            <div>
+              <span style="font-size:12px; color:#6b7280;">RANK #{rank}</span><br/>
+              <span style="font-size:18px; font-weight:700; color:#111827;">{row['candidate_name']}</span>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:26px; font-weight:800; color:#111827;">{score}%</div>
+              <div style="background:{style['bg']}; color:{style['text']}; border-radius:999px;
+                          padding:4px 14px; font-size:13px; font-weight:600; display:inline-block; margin-top:4px;">
+                {style['emoji']} {reco}
+              </div>
+            </div>
+          </div>
+
+          <div style="width:100%; background:#f3f4f6; border-radius:999px; height:8px; margin:12px 0;">
+            <div style="width:{score}%; background:{style['border']}; height:8px; border-radius:999px;"></div>
+          </div>
+
+          <p style="font-size:14px; color:#374151; margin:8px 0 12px 0;"><em>{row.get('summary','')}</em></p>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div>
+              <div style="font-size:12px; font-weight:700; color:#15803d; margin-bottom:4px;">✅ STRENGTHS</div>
+              {_pills(row.get('strengths', []), '#dcfce7')}
+            </div>
+            <div>
+              <div style="font-size:12px; font-weight:700; color:#b91c1c; margin-bottom:4px;">⚠️ WEAKNESSES</div>
+              {_pills(row.get('weaknesses', []), '#fee2e2')}
+            </div>
+            <div>
+              <div style="font-size:12px; font-weight:700; color:#1d4ed8; margin-bottom:4px;">🎯 MATCHED SKILLS</div>
+              {_pills(row.get('matched_skills', []), '#dbeafe')}
+            </div>
+            <div>
+              <div style="font-size:12px; font-weight:700; color:#a16207; margin-bottom:4px;">❌ MISSING SKILLS</div>
+              {_pills(row.get('missing_skills', []), '#fef9c3')}
+            </div>
+          </div>
+
+          <div style="margin-top:12px; padding-top:10px; border-top:1px dashed #e5e7eb;">
+            <span style="font-size:12px; font-weight:700; color:#6b7280;">💬 WHY: </span>
+            <span style="font-size:13px; color:#374151;">{row.get('recommendation_reason','')}</span>
+          </div>
+        </div>
+        """
+        st.markdown(card_html, unsafe_allow_html=True)
 else:
     st.info("👆 Upload a Job Description and one or more resumes, then click **Run RAG Pipeline** to see results.")
