@@ -19,7 +19,7 @@ Built with OpenAI Embeddings, FAISS Vector Search, and GPT-4o / GPT-4o-mini, the
 - [Usage](#usage)
 - [Future Enhancements](#future-enhancements)
 - [Contributing](#contributing)
-- [License](#license)
+
 
 ---
 
@@ -286,8 +286,3 @@ Contributions are welcome. Please open an issue to discuss proposed changes befo
 4. Push to the branch (`git push origin feature/your-feature`)
 5. Open a pull request
 
----
-
-## License
-
-This project is licensed under the MIT License. See the `LICENSE` file for details.
