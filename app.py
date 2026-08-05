@@ -46,6 +46,7 @@ except ImportError:
 
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from openai import AuthenticationError, RateLimitError, APIError
 
 # --------------------------------------------------------------------------------------
 # PAGE CONFIG
@@ -105,8 +106,30 @@ if loaded_session_file is not None:
 st.sidebar.markdown("---")
 st.sidebar.caption("Tech Stack: LangChain · OpenAI · FAISS · Streamlit · Plotly · FPDF2")
 
+# Strip accidental whitespace/newlines from copy-pasted keys — a very common
+# cause of a spurious AuthenticationError.
 if api_key:
+    api_key = api_key.strip()
     os.environ["OPENAI_API_KEY"] = api_key
+
+if st.sidebar.button("🔑 Test API Key"):
+    if not api_key:
+        st.sidebar.error("Enter an API key above first.")
+    else:
+        try:
+            OpenAIEmbeddings(model=embedding_model).embed_query("connection test")
+            st.sidebar.success("✅ API key is valid and working.")
+        except AuthenticationError:
+            st.sidebar.error(
+                "❌ Invalid API key. Check for typos, extra spaces, an expired/revoked key, "
+                "or a key from a project without API access."
+            )
+        except RateLimitError:
+            st.sidebar.error("⚠️ Key is valid, but you're rate-limited or out of quota/credits.")
+        except APIError as exc:
+            st.sidebar.error(f"⚠️ OpenAI API error: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            st.sidebar.error(f"⚠️ Unexpected error: {exc}")
 
 # --------------------------------------------------------------------------------------
 # HEADER
@@ -367,7 +390,31 @@ if process_btn:
             resume_text = load_document_text(rf)
             if anonymize_resumes:
                 resume_text = anonymize_text(resume_text, candidate_name)
-            result = analyze_candidate(jd_text, resume_text, candidate_name)
+
+            try:
+                result = analyze_candidate(jd_text, resume_text, candidate_name)
+            except AuthenticationError:
+                progress.empty()
+                st.error(
+                    "❌ OpenAI rejected your API key (AuthenticationError). This is a key/account "
+                    "issue, not a pipeline bug. Check that the key in the sidebar has no extra "
+                    "spaces, hasn't been revoked or expired, and belongs to a project with access "
+                    "to the embeddings and chat APIs — use **🔑 Test API Key** in the sidebar to "
+                    "confirm, then re-run."
+                )
+                st.stop()
+            except RateLimitError:
+                progress.empty()
+                st.error(
+                    "⚠️ Rate limit or quota exceeded on your OpenAI account. Check your usage/billing "
+                    "at platform.openai.com and try again."
+                )
+                st.stop()
+            except APIError as exc:
+                progress.empty()
+                st.error(f"⚠️ OpenAI API error while processing **{candidate_name}**: {exc}")
+                st.stop()
+
             results.append(result)
             progress.progress((i + 1) / len(resume_files), text=f"Done: {candidate_name}")
         progress.empty()
@@ -576,13 +623,20 @@ if results:
                     if not api_key:
                         st.error("Please enter your OpenAI API key in the sidebar first.")
                     else:
-                        with st.spinner("Drafting email..."):
-                            st.session_state[email_key] = draft_email(
-                                row["candidate_name"],
-                                row["match_score"],
-                                row["recommendation"],
-                                row.get("recommendation_reason", ""),
-                            )
+                        try:
+                            with st.spinner("Drafting email..."):
+                                st.session_state[email_key] = draft_email(
+                                    row["candidate_name"],
+                                    row["match_score"],
+                                    row["recommendation"],
+                                    row.get("recommendation_reason", ""),
+                                )
+                        except AuthenticationError:
+                            st.error("❌ Invalid OpenAI API key. Use 🔑 Test API Key in the sidebar to confirm.")
+                        except RateLimitError:
+                            st.error("⚠️ Rate limit or quota exceeded on your OpenAI account.")
+                        except APIError as exc:
+                            st.error(f"⚠️ OpenAI API error: {exc}")
                 if email_key in st.session_state:
                     st.text_area(
                         "Draft email (editable before sending)",
@@ -600,22 +654,23 @@ if results:
         if not api_key:
             st.error("Please enter your OpenAI API key in the sidebar first.")
         else:
-            with st.spinner("Thinking..."):
-                pool_context = json.dumps(
-                    [
-                        {
-                            "name": r["candidate_name"],
-                            "score": r["match_score"],
-                            "recommendation": r["recommendation"],
-                            "matched_skills": r.get("matched_skills", []),
-                            "missing_skills": r.get("missing_skills", []),
-                            "summary": r.get("summary", ""),
-                        }
-                        for r in results
-                    ],
-                    indent=2,
-                )
-                qa_prompt = f"""You are a recruiting assistant. Here is structured data about candidates
+            try:
+                with st.spinner("Thinking..."):
+                    pool_context = json.dumps(
+                        [
+                            {
+                                "name": r["candidate_name"],
+                                "score": r["match_score"],
+                                "recommendation": r["recommendation"],
+                                "matched_skills": r.get("matched_skills", []),
+                                "missing_skills": r.get("missing_skills", []),
+                                "summary": r.get("summary", ""),
+                            }
+                            for r in results
+                        ],
+                        indent=2,
+                    )
+                    qa_prompt = f"""You are a recruiting assistant. Here is structured data about candidates
 who were screened against a job description:
 
 {pool_context}
@@ -625,9 +680,15 @@ names directly, and say so plainly if the data doesn't contain the answer.
 
 Question: {user_question}
 """
-                qa_llm = ChatOpenAI(model=llm_model, temperature=0.2)
-                answer = qa_llm.invoke(qa_prompt).content.strip()
-            st.markdown(f"**Answer:** {answer}")
+                    qa_llm = ChatOpenAI(model=llm_model, temperature=0.2)
+                    answer = qa_llm.invoke(qa_prompt).content.strip()
+                st.markdown(f"**Answer:** {answer}")
+            except AuthenticationError:
+                st.error("❌ Invalid OpenAI API key. Use 🔑 Test API Key in the sidebar to confirm.")
+            except RateLimitError:
+                st.error("⚠️ Rate limit or quota exceeded on your OpenAI account.")
+            except APIError as exc:
+                st.error(f"⚠️ OpenAI API error: {exc}")
 
     # ---- Export ----
     st.subheader("📤 Export Reports")
