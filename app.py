@@ -513,7 +513,7 @@ if results:
         )
         fig_bar.update_traces(texttemplate="%{text}%", textposition="outside")
         fig_bar.update_layout(yaxis_range=[0, 110])
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, use_container_width=True, key="bar_match_score_comparison")
 
         # ---- Candidate Comparison ----
         st.subheader("⚖️ Compare Candidates")
@@ -550,7 +550,7 @@ if results:
                 showlegend=True,
                 height=450,
             )
-            st.plotly_chart(fig_radar, use_container_width=True)
+            st.plotly_chart(fig_radar, use_container_width=True, key="radar_candidate_comparison")
 
             compare_table = compare_df[["candidate_name", "match_score", "recommendation"]].copy()
             compare_table.columns = ["Candidate", "Match Score (%)", "Recommendation"]
@@ -575,7 +575,7 @@ if results:
                     color_discrete_sequence=["#ef4444"], title="Most Common Missing Skills",
                 )
                 fig_missing.update_layout(yaxis={"categoryorder": "total ascending"})
-                st.plotly_chart(fig_missing, use_container_width=True)
+                st.plotly_chart(fig_missing, use_container_width=True, key="bar_missing_skills_pool")
             else:
                 st.caption("No missing-skill data available for the current filter.")
         with gcol2:
@@ -586,7 +586,7 @@ if results:
                     color_discrete_sequence=["#22c55e"], title="Most Common Matched Skills",
                 )
                 fig_matched.update_layout(yaxis={"categoryorder": "total ascending"})
-                st.plotly_chart(fig_matched, use_container_width=True)
+                st.plotly_chart(fig_matched, use_container_width=True, key="bar_matched_skills_pool")
             else:
                 st.caption("No matched-skill data available for the current filter.")
 
@@ -615,7 +615,11 @@ if results:
                         },
                     ))
                     fig_gauge.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                    st.plotly_chart(fig_gauge, use_container_width=True)
+                    st.plotly_chart(
+                        fig_gauge,
+                        use_container_width=True,
+                        key=f"gauge_chart_{rank}_{row['candidate_name']}",
+                    )
 
                     st.markdown(f"**Recommendation:** {reco_color.get(row['recommendation'],'')} **{row['recommendation']}**")
                     st.caption(row.get("recommendation_reason", ""))
