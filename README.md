@@ -47,7 +47,7 @@ With this platform, recruiters can:
 > End-to-end system architecture for a GenAI-powered resume screening and candidate matching platform using Retrieval-Augmented Generation (RAG).
 
 <p align="center">
-  <img src="docs/architecture.png" width="100%" alt="System architecture diagram">
+  <img src="architecture.png" width="100%" alt="System architecture diagram">
 </p>
 
 ---
