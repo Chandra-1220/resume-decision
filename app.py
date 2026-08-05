@@ -20,6 +20,15 @@ New in this version:
   12. Email Drafting      -> AI-drafted outreach/rejection/follow-up email per candidate
   13. PDF Export          -> full multi-candidate report as a downloadable PDF
   14. Session Save/Load   -> export results to JSON and reload later without re-running the pipeline
+
+SECURITY FIX (this version):
+  The OpenAI API key is now kept strictly in st.session_state (per-browser-session)
+  and passed explicitly into every OpenAIEmbeddings/ChatOpenAI call. Earlier versions
+  read/wrote the key via os.environ["OPENAI_API_KEY"], which is a PROCESS-WIDE global
+  shared by every concurrent visitor on a typical Streamlit deployment. That meant:
+    - One user's key could get pre-filled into another user's sidebar field.
+    - Concurrent users could end up silently using each other's keys.
+  Neither of those is possible anymore since nothing touches os.environ at runtime.
 """
 
 import io
@@ -69,8 +78,8 @@ st.sidebar.title("⚙️ Configuration")
 api_key = st.sidebar.text_input(
     "OpenAI API Key",
     type="password",
-    value=os.environ.get("OPENAI_API_KEY", ""),
-    help="Your key is used only for this session and never stored.",
+    value=st.session_state.get("api_key", ""),
+    help="Your key is kept only in your own browser session and is never written to a shared/global variable.",
 )
 llm_model = st.sidebar.selectbox("LLM Model", ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"], index=1)
 embedding_model = st.sidebar.selectbox("Embedding Model", ["text-embedding-3-small", "text-embedding-3-large"])
@@ -108,17 +117,19 @@ st.sidebar.markdown("---")
 st.sidebar.caption("Tech Stack: LangChain · OpenAI · FAISS · Streamlit · Plotly · FPDF2")
 
 # Strip accidental whitespace/newlines from copy-pasted keys — a very common
-# cause of a spurious AuthenticationError.
+# cause of a spurious AuthenticationError. Stored ONLY in st.session_state,
+# which is per-browser-session — never in a process-global like os.environ,
+# so one visitor's key can never leak to, or be reused by, another visitor.
 if api_key:
     api_key = api_key.strip()
-    os.environ["OPENAI_API_KEY"] = api_key
+    st.session_state["api_key"] = api_key
 
 if st.sidebar.button("🔑 Test API Key"):
     if not api_key:
         st.sidebar.error("Enter an API key above first.")
     else:
         try:
-            OpenAIEmbeddings(model=embedding_model).embed_query("connection test")
+            OpenAIEmbeddings(model=embedding_model, api_key=api_key).embed_query("connection test")
             st.sidebar.success("✅ API key is valid and working.")
         except AuthenticationError:
             st.sidebar.error(
@@ -206,9 +217,9 @@ def chunk_text(text: str, candidate_name: str):
 # --------------------------------------------------------------------------------------
 # STEP 3 & 4: EMBEDDINGS/VECTOR STORE + RETRIEVAL
 # --------------------------------------------------------------------------------------
-def build_vectorstore(chunks):
+def build_vectorstore(chunks, api_key: str):
     """Generate Embeddings + Vector Database (FAISS)."""
-    embeddings = OpenAIEmbeddings(model=embedding_model)
+    embeddings = OpenAIEmbeddings(model=embedding_model, api_key=api_key)
     return FAISS.from_documents(chunks, embeddings)
 
 
@@ -247,12 +258,12 @@ Respond with STRICT JSON ONLY (no markdown fences, no preamble) matching this ex
 """
 
 
-def analyze_candidate(jd_text: str, resume_text: str, candidate_name: str) -> dict:
+def analyze_candidate(jd_text: str, resume_text: str, candidate_name: str, api_key: str) -> dict:
     chunks = chunk_text(resume_text, candidate_name)
-    vectorstore = build_vectorstore(chunks)
+    vectorstore = build_vectorstore(chunks, api_key)
     context = retrieve_top_chunks(vectorstore, jd_text, k=top_k)
 
-    llm = ChatOpenAI(model=llm_model, temperature=0.2)
+    llm = ChatOpenAI(model=llm_model, temperature=0.2, api_key=api_key)
     prompt = ANALYSIS_PROMPT.format(jd_text=jd_text, context=context, candidate_name=candidate_name)
     response = llm.invoke(prompt)
 
@@ -295,7 +306,7 @@ Keep the whole email under 150 words. Output the subject line on the first line
 """
 
 
-def draft_email(candidate_name: str, score: int, recommendation: str, reason: str) -> str:
+def draft_email(candidate_name: str, score: int, recommendation: str, reason: str, api_key: str) -> str:
     if recommendation == "Yes":
         tone = "interview invitation"
         extra = "Invite them to schedule a next-round interview and express genuine enthusiasm about their background."
@@ -306,7 +317,7 @@ def draft_email(candidate_name: str, score: int, recommendation: str, reason: st
         tone = "friendly follow-up"
         extra = "Ask one clarifying question related to a skill gap before a final decision is made."
 
-    llm = ChatOpenAI(model=llm_model, temperature=0.4)
+    llm = ChatOpenAI(model=llm_model, temperature=0.4, api_key=api_key)
     prompt = EMAIL_PROMPT.format(
         candidate_name=candidate_name,
         score=score,
@@ -421,7 +432,7 @@ if process_btn:
                 resume_text = anonymize_text(resume_text, candidate_name)
 
             try:
-                result = analyze_candidate(jd_text, resume_text, candidate_name)
+                result = analyze_candidate(jd_text, resume_text, candidate_name, api_key)
             except AuthenticationError:
                 progress.empty()
                 st.error(
@@ -663,6 +674,7 @@ if results:
                                     row["match_score"],
                                     row["recommendation"],
                                     row.get("recommendation_reason", ""),
+                                    api_key,
                                 )
                         except AuthenticationError:
                             st.error("❌ Invalid OpenAI API key. Use 🔑 Test API Key in the sidebar to confirm.")
@@ -713,7 +725,7 @@ names directly, and say so plainly if the data doesn't contain the answer.
 
 Question: {user_question}
 """
-                    qa_llm = ChatOpenAI(model=llm_model, temperature=0.2)
+                    qa_llm = ChatOpenAI(model=llm_model, temperature=0.2, api_key=api_key)
                     answer = qa_llm.invoke(qa_prompt).content.strip()
                 st.markdown(f"**Answer:** {answer}")
             except AuthenticationError:
