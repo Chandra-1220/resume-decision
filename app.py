@@ -34,6 +34,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from fpdf import FPDF
+from fpdf.enums import XPos, YPos
 
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
 
@@ -321,6 +322,30 @@ def draft_email(candidate_name: str, score: int, recommendation: str, reason: st
 # --------------------------------------------------------------------------------------
 # PDF REPORT EXPORT
 # --------------------------------------------------------------------------------------
+def _pdf_safe(text) -> str:
+    """Make LLM-generated text safe for fpdf2's core (Latin-1-only) fonts.
+
+    LLM output frequently contains smart quotes, em-dashes, bullets, or other
+    Unicode characters that the built-in Helvetica font can't render, which
+    crashes fpdf2's line-wrapping. This normalizes common punctuation, strips
+    anything else outside Latin-1, and breaks up pathologically long unbroken
+    tokens (e.g. long URLs) so multi_cell always has somewhere to wrap.
+    """
+    text = "" if text is None else str(text)
+    replacements = {
+        "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+        "\u2013": "-", "\u2014": "-", "\u2026": "...", "\u00a0": " ",
+        "\u2022": "-", "\u2192": "->",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    # Drop anything the core font still can't encode (emoji, CJK, etc.)
+    text = text.encode("latin-1", "ignore").decode("latin-1")
+    # Insert a break point into any unbroken run of 60+ characters
+    text = re.sub(r"(\S{60})(?=\S)", r"\1 ", text)
+    return text.strip() or " "
+
+
 def build_pdf_report(report_df: pd.DataFrame) -> bytes:
     """Render a multi-candidate PDF report (one page per candidate)."""
     pdf = FPDF()
@@ -328,28 +353,32 @@ def build_pdf_report(report_df: pd.DataFrame) -> bytes:
 
     def _section(title: str, items):
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, title, ln=True)
+        pdf.cell(0, 8, _pdf_safe(title), ln=True)
         pdf.set_font("Helvetica", "", 11)
         if items:
             for it in items:
-                pdf.multi_cell(0, 6, f"- {it}")
+                pdf.multi_cell(0, 6, f"- {_pdf_safe(it)}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         else:
-            pdf.multi_cell(0, 6, "None listed")
+            pdf.multi_cell(0, 6, "None listed", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(1)
 
     for rank, row in report_df.iterrows():
         pdf.add_page()
         pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(0, 10, f"#{rank} - {row['candidate_name']}", ln=True)
+        pdf.cell(0, 10, _pdf_safe(f"#{rank} - {row['candidate_name']}"), ln=True)
 
         pdf.set_font("Helvetica", "", 12)
-        pdf.cell(0, 8, f"Match Score: {row['match_score']}%   Recommendation: {row['recommendation']}", ln=True)
+        pdf.cell(
+            0, 8,
+            _pdf_safe(f"Match Score: {row['match_score']}%   Recommendation: {row['recommendation']}"),
+            ln=True,
+        )
         pdf.ln(2)
 
         pdf.set_font("Helvetica", "B", 12)
         pdf.cell(0, 8, "Summary:", ln=True)
         pdf.set_font("Helvetica", "", 11)
-        pdf.multi_cell(0, 6, str(row.get("summary", "")))
+        pdf.multi_cell(0, 6, _pdf_safe(row.get("summary", "")), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(2)
 
         _section("Strengths:", row.get("strengths", []))
@@ -361,7 +390,7 @@ def build_pdf_report(report_df: pd.DataFrame) -> bytes:
         pdf.set_font("Helvetica", "B", 12)
         pdf.cell(0, 8, "Recommendation Reason:", ln=True)
         pdf.set_font("Helvetica", "", 11)
-        pdf.multi_cell(0, 6, str(row.get("recommendation_reason", "")))
+        pdf.multi_cell(0, 6, _pdf_safe(row.get("recommendation_reason", "")), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     output = pdf.output(dest="S")
     return bytes(output)
@@ -708,14 +737,17 @@ Question: {user_question}
         )
 
     with exp_col2:
-        pdf_bytes = build_pdf_report(df)
-        st.download_button(
-            "⬇️ Download Full Report as PDF",
-            data=pdf_bytes,
-            file_name="candidate_match_report.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
+        try:
+            pdf_bytes = build_pdf_report(df)
+            st.download_button(
+                "⬇️ Download Full Report as PDF",
+                data=pdf_bytes,
+                file_name="candidate_match_report.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            st.warning(f"⚠️ Couldn't generate the PDF report ({exc}). CSV and JSON exports are unaffected.")
 
     with exp_col3:
         st.download_button(
