@@ -53,7 +53,7 @@ from openai import AuthenticationError, RateLimitError, APIError
 # PAGE CONFIG
 # --------------------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Resume Screening & Candidate Matching (RAG)",
+    page_title="HR Resume Screening & Candidate Matching (RAG)",
     page_icon="🧠",
     layout="wide",
 )
