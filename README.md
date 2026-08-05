@@ -244,7 +244,7 @@ OPENAI_API_KEY=your_api_key
 streamlit run app.py
 ```
 
-The app will be available at `http://localhost:8501` by default.
+The app will be available at `https://hr-resume-screening-0.streamlit.app` by default.
 
 ---
 
