@@ -776,7 +776,10 @@ Question: {user_question}
         )
 
     st.markdown("##### 👀 Report Preview")
-    st.caption("This is a visual preview of exactly what's inside the CSV/PDF above — one card per candidate, ranked.")
+    st.caption(
+        "Reflects the filters above (search, recommendation, min. match score). "
+        "The CSV/PDF/JSON exports below always include the full candidate pool regardless of these filters."
+    )
 
     reco_style = {
         "Yes":   {"bg": "#dcfce7", "border": "#22c55e", "text": "#15803d", "emoji": "🟢"},
@@ -793,7 +796,10 @@ Question: {user_question}
             for i in items
         )
 
-    for rank, row in df.iterrows():
+    if filtered_df.empty:
+        st.info("No candidates match the current filters, so there's nothing to preview.")
+
+    for rank, row in filtered_df.iterrows():
         reco = row.get("recommendation", "Maybe")
         style = reco_style.get(reco, reco_style["Maybe"])
         score = row.get("match_score", 0)
